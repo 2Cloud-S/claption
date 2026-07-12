@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+*.log
+__pycache__/
+.pytest_cache/
+python/**/__pycache__/
+runs/
+frames/
+.env
+.env.local
+submission

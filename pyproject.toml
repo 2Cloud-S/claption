@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claption"
+version = "0.1.0"
+description = "Four-tone video captioning pipeline for AMD Developer Hackathon ACT II"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+claption = "claption.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "python"}
+
+[tool.setuptools.packages.find]
+where = ["python"]

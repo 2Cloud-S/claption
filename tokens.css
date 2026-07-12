@@ -1,0 +1,44 @@
+/* Hallmark tokens for Claption */
+:root {
+  --color-paper: oklch(97% 0.012 96);
+  --color-paper-2: oklch(93% 0.018 94);
+  --color-paper-3: oklch(88% 0.022 94);
+  --color-ink: oklch(19% 0.026 260);
+  --color-muted: oklch(45% 0.034 252);
+  --color-rule: oklch(79% 0.029 92);
+  --color-accent: oklch(56% 0.16 154);
+  --color-accent-2: oklch(64% 0.15 36);
+  --color-accent-3: oklch(59% 0.13 248);
+  --color-danger: oklch(56% 0.18 27);
+  --color-success: oklch(53% 0.14 151);
+  --color-focus: oklch(47% 0.18 248);
+  --font-display: Georgia, "Times New Roman", serif;
+  --font-body: Arial, Helvetica, sans-serif;
+  --font-mono: "Courier New", Courier, monospace;
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.35rem;
+  --text-2xl: 1.8rem;
+  --text-display-s: 2.5rem;
+  --text-display: 4.5rem;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 320ms;
+  --rule-thin: 1px;
+  --rule-thick: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+}
