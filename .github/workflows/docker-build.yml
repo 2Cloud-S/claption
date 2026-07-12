@@ -13,9 +13,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: claption
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,8 +23,8 @@ jobs:
       - name: Build image
         uses: docker/build-push-action@v6
         with:
-          context: ./claption
-          file: ./claption/Dockerfile
+          context: .
+          file: ./Dockerfile
           push: false
           tags: claption:ci
           cache-from: type=gha
@@ -45,8 +42,8 @@ jobs:
         if: github.event_name == 'push'
         uses: docker/build-push-action@v6
         with:
-          context: ./claption
-          file: ./claption/Dockerfile
+          context: .
+          file: ./Dockerfile
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/claption:latest
           cache-from: type=gha
