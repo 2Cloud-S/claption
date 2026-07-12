@@ -4,11 +4,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { NextRequest, NextResponse } from "next/server";
+import ffmpegStatic from "ffmpeg-static";
+import ffprobeStatic from "ffprobe-static";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const execFileAsync = promisify(execFile);
+const ffmpegPath = ffmpegStatic || "ffmpeg";
+const ffprobePath = ffprobeStatic.path || "ffprobe";
 const styles = ["formal", "sarcastic", "humorous-tech", "humorous-non-tech"] as const;
 type StyleKey = (typeof styles)[number];
 
@@ -124,7 +128,7 @@ export async function POST(request: NextRequest) {
 }
 
 async function probeVideo(videoPath: string) {
-  const { stdout } = await execFileAsync("ffprobe", [
+  const { stdout } = await execFileAsync(ffprobePath, [
     "-v",
     "error",
     "-select_streams",
@@ -149,7 +153,7 @@ async function sampleFrames(videoPath: string, workDir: string, timestamps: numb
   let totalBytes = 0;
   for (let index = 0; index < timestamps.length; index += 1) {
     const framePath = path.join(/*turbopackIgnore: true*/ workDir, `frame-${String(index).padStart(3, "0")}.jpg`);
-    await execFileAsync("ffmpeg", [
+    await execFileAsync(ffmpegPath, [
       "-y",
       "-ss",
       timestamps[index].toFixed(3),
