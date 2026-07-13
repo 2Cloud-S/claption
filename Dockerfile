@@ -24,8 +24,9 @@ ENV FIREWORKS_BASE_URL=https://api.fireworks.ai/inference/v1
 ENV FIREWORKS_VISION_MODEL=accounts/fireworks/models/qwen3p7-plus
 ENV FIREWORKS_TEXT_MODEL=accounts/fireworks/models/qwen3p7-plus
 ENV FIREWORKS_JUDGE_MODEL=accounts/fireworks/models/kimi-k2p7-code
-ENV CLAPTION_MAX_FRAMES=24
+ENV CLAPTION_MAX_FRAMES=8
 ENV CLAPTION_REPAIR_THRESHOLD=8.0
+ENV CLAPTION_ENABLE_INTERNAL_JUDGE=0
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 python-is-python3 python3-pip ffmpeg \

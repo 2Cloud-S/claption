@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
     await writeFile(videoPath, Buffer.from(await file.arrayBuffer()));
 
     const probed = await probeVideo(videoPath, tools.ffprobe);
-    const maxFrames = clampNumber(Number(process.env.CLAPTION_MAX_FRAMES ?? 24), 1, 30);
+    const maxFrames = clampNumber(Number(process.env.CLAPTION_MAX_FRAMES ?? 8), 1, 30);
     const timestamps = chooseTimestamps(probed.duration, maxFrames);
     const framePayloads = await sampleFrames(videoPath, workDir, timestamps, tools.ffmpeg);
 
@@ -100,13 +100,19 @@ export async function POST(request: NextRequest) {
     const judgeScores: Record<StyleKey, JudgeScore> = {} as Record<StyleKey, JudgeScore>;
     const repairThreshold = Number(process.env.CLAPTION_REPAIR_THRESHOLD ?? 8.0);
 
-    for (const style of styles) {
-      let score = await judgeCaption(facts, style, captions[style], 0);
-      if (score.overall < repairThreshold) {
-        captions[style] = await repairCaption(facts, style, captions[style], score.critique);
-        score = await judgeCaption(facts, style, captions[style], 1);
+    if (envFlag("CLAPTION_ENABLE_INTERNAL_JUDGE")) {
+      for (const style of styles) {
+        let score = await judgeCaption(facts, style, captions[style], 0);
+        if (score.overall < repairThreshold) {
+          captions[style] = await repairCaption(facts, style, captions[style], score.critique);
+          score = await judgeCaption(facts, style, captions[style], 1);
+        }
+        judgeScores[style] = score;
       }
-      judgeScores[style] = score;
+    } else {
+      for (const style of styles) {
+        judgeScores[style] = fastScore(style);
+      }
     }
 
     return NextResponse.json({
@@ -370,6 +376,17 @@ function scoreField(value: unknown) {
   return Number.isFinite(score) ? Math.max(0, Math.min(10, score)) : 0;
 }
 
+function fastScore(style: StyleKey): JudgeScore {
+  return {
+    accuracy: 0,
+    tone: 0,
+    humor: 0,
+    overall: 0,
+    critique: `Internal judge skipped for fast AMD scoring mode (${style}).`,
+    repair_count: 0
+  };
+}
+
 function clampNumber(value: number, min: number, max: number) {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, Math.round(value)));
@@ -377,6 +394,10 @@ function clampNumber(value: number, min: number, max: number) {
 
 function env(name: string, fallback: string) {
   return process.env[name] || fallback;
+}
+
+function envFlag(name: string) {
+  return ["1", "true", "yes", "on"].includes((process.env[name] || "").toLowerCase());
 }
 
 function sanitizeFileName(name: string) {

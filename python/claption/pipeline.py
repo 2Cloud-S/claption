@@ -6,7 +6,7 @@ from pathlib import Path
 from .agents import generate_captions, ground_video, repair_caption
 from .config import Settings
 from .judge import judge_caption
-from .schemas import STYLES, Metadata, VideoResult
+from .schemas import STYLES, JudgeScore, Metadata, VideoResult
 from .video import sample_frames
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"}
@@ -25,12 +25,23 @@ def process_video(video_path: Path, frame_dir: Path, settings: Settings) -> Vide
     facts = ground_video(settings, sampled.images_base64, video_path.name)
     captions = generate_captions(settings, facts)
     scores = {}
-    for style in STYLES:
-        score = judge_caption(settings, facts, style, captions[style])
-        if score.overall < settings.repair_threshold:
-            captions[style] = repair_caption(settings, facts, style, captions[style], score.critique)
-            score = judge_caption(settings, facts, style, captions[style], repair_count=1)
-        scores[style] = score
+    if settings.enable_internal_judge:
+        for style in STYLES:
+            score = judge_caption(settings, facts, style, captions[style])
+            if score.overall < settings.repair_threshold:
+                captions[style] = repair_caption(settings, facts, style, captions[style], score.critique)
+                score = judge_caption(settings, facts, style, captions[style], repair_count=1)
+            scores[style] = score
+    else:
+        for style in STYLES:
+            scores[style] = JudgeScore(
+                accuracy=0,
+                tone=0,
+                humor=0,
+                overall=0,
+                critique=f"Internal judge skipped for fast AMD scoring mode ({style}).",
+                repair_count=0,
+            )
     return VideoResult(
         video_id=video_path.stem,
         metadata=Metadata(
