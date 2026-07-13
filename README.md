@@ -9,7 +9,7 @@ The pipeline separates visual grounding from style writing:
 3. A Fireworks text model generates the four style captions from that fact sheet only.
 4. Optional self-judge mode scores accuracy, tone, and humor, then triggers one repair pass for weak captions.
 
-By default, the container runs in fast automated-scoring mode: it samples 8 frames and skips the internal judge/repair loop because AMD already runs the official judge. Set `CLAPTION_ENABLE_INTERNAL_JUDGE=1` only for slower demos where you want Claption's own critique fields populated.
+By default, the container runs in leaderboard mode: it samples up to 12 timestamped frames, performs one grounding call and one four-style caption call, and skips the expensive internal LLM judge because AMD runs the official judge. A single grouped correction call runs only when deterministic checks find an empty, duplicated, overly long, or clearly mistyled caption. Set `CLAPTION_ENABLE_INTERNAL_JUDGE=1` only for slower demos where you want Claption's own critique fields populated.
 
 ## Judge Quickstart
 
@@ -34,7 +34,7 @@ Judges can then run the prebuilt image without building locally:
 docker pull ghcr.io/<your-github-username>/claption:latest
 docker run --rm -p 3000:3000 \
   -e FIREWORKS_API_KEY="$FIREWORKS_API_KEY" \
-  -e CLAPTION_MAX_FRAMES=8 \
+  -e CLAPTION_MAX_FRAMES=12 \
   -e CLAPTION_ENABLE_INTERNAL_JUDGE=0 \
   ghcr.io/<your-github-username>/claption:latest
 ```
@@ -74,7 +74,7 @@ set FIREWORKS_BASE_URL=https://api.fireworks.ai/inference/v1
 set FIREWORKS_VISION_MODEL=accounts/fireworks/models/qwen3p7-plus
 set FIREWORKS_TEXT_MODEL=accounts/fireworks/models/qwen3p7-plus
 set FIREWORKS_JUDGE_MODEL=accounts/fireworks/models/kimi-k2p7-code
-set CLAPTION_MAX_FRAMES=8
+set CLAPTION_MAX_FRAMES=12
 set CLAPTION_REPAIR_THRESHOLD=8.0
 set CLAPTION_ENABLE_INTERNAL_JUDGE=0
 set PYTHONPATH=python

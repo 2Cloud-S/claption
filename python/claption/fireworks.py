@@ -9,15 +9,24 @@ class FireworksClient:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
 
-    def chat(self, model: str, messages: list[dict], temperature: float = 0.2) -> str:
-        body = json.dumps(
-            {
-                "model": model,
-                "messages": messages,
-                "temperature": temperature,
-                "response_format": {"type": "json_object"},
-            }
-        ).encode("utf-8")
+    def chat(
+        self,
+        model: str,
+        messages: list[dict],
+        temperature: float = 0.2,
+        max_tokens: int = 1200,
+        reasoning_effort: str | None = None,
+    ) -> str:
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"},
+        }
+        if reasoning_effort:
+            payload["reasoning_effort"] = reasoning_effort
+        body = json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(
             f"{self.base_url}/chat/completions",
             data=body,

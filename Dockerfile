@@ -24,7 +24,7 @@ ENV FIREWORKS_BASE_URL=https://api.fireworks.ai/inference/v1
 ENV FIREWORKS_VISION_MODEL=accounts/fireworks/models/qwen3p7-plus
 ENV FIREWORKS_TEXT_MODEL=accounts/fireworks/models/qwen3p7-plus
 ENV FIREWORKS_JUDGE_MODEL=accounts/fireworks/models/kimi-k2p7-code
-ENV CLAPTION_MAX_FRAMES=8
+ENV CLAPTION_MAX_FRAMES=12
 ENV CLAPTION_REPAIR_THRESHOLD=8.0
 ENV CLAPTION_ENABLE_INTERNAL_JUDGE=0
 

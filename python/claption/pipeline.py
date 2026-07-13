@@ -22,7 +22,7 @@ def process_path(input_path: Path, output_path: Path, settings: Settings) -> lis
 
 def process_video(video_path: Path, frame_dir: Path, settings: Settings) -> VideoResult:
     sampled = sample_frames(video_path, frame_dir, settings.max_frames)
-    facts = ground_video(settings, sampled.images_base64, video_path.name)
+    facts = ground_video(settings, sampled.images_base64, sampled.timestamps, video_path.name)
     captions = generate_captions(settings, facts)
     scores = {}
     if settings.enable_internal_judge:

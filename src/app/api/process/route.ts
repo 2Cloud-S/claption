@@ -42,20 +42,31 @@ type JudgeScore = {
 };
 
 const groundingPrompt = `You are Claption's grounding agent.
-Describe only what is visible or explicitly provided.
-Do not guess identities, locations, brands, emotions, or off-screen events.
-Return strict JSON with: summary, visible_entities, actions, scene_changes, on_screen_text, audio_notes, uncertainty_notes.
-Mention uncertainty instead of filling gaps.`;
+Analyze the timestamped silent frames as one chronological video.
+Describe only details supported by the frames, favoring actions or entities visible in multiple frames.
+Do not guess identities, relationships, locations, brands, emotions, motives, causes, outcomes, speech, or off-screen events.
+Treat a detail seen in only one ambiguous frame as uncertain. Do not turn uncertainty into a caption claim.
+Use concrete nouns and precise visible verbs. Never hide the action behind generic phrases such as "does something," "main action," "activity," or "demonstration."
+Transcribe on-screen text only when clearly legible; otherwise place it in uncertainty_notes.
+The frames contain no audio: audio_notes must be an empty array.
+Write a neutral one-sentence summary of the main visible action, then return strict JSON with exactly:
+summary, visible_entities, actions, scene_changes, on_screen_text, audio_notes, uncertainty_notes.`;
 
 const captionPrompt = `You are Claption's caption agent.
-Generate exactly four captions from the fact sheet only.
+Generate exactly four English captions from the same fact sheet.
 Return strict JSON keyed by formal, sarcastic, humorous-tech, humorous-non-tech.
 Each value must include text, rationale, and risk_flags.
+Accuracy is the first priority. Every caption must preserve the same concrete visual anchor: the main subject and main visible action from the summary.
+Never add names, identities, relationships, locations, dialogue, intentions, emotions, causes, outcomes, objects, failures, or events absent from the fact sheet.
+Use humor only as commentary or comparison, never as a new factual claim. Ignore uncertain details.
+Use the fact sheet's concrete nouns and verbs; never replace them with generic phrases such as "main action," "activity," "demonstration," "something," or "some object."
+Each text must be one complete sentence of 8-28 words. Keep captions distinct, immediately recognizable by tone, and free of hashtags, emoji, quotation marks, or meta-commentary.
+The rationale must briefly name the grounded action used. risk_flags must be [] when the caption contains no unsupported claim.
 Tone rules:
-- formal: concise, objective, no jokes.
-- sarcastic: dry irony, factually accurate, no insults.
-- humorous-tech: debugging, latency, APIs, GPUs, logs, prompts, or deployments.
-- humorous-non-tech: everyday humor understandable by non-engineers.`;
+- formal: objective description only; no jokes, irony, exaggeration, or opinion.
+- sarcastic: unmistakable dry irony about the situation; no insults, ridicule, or invented mishaps.
+- humorous-tech: one clear software/AI analogy using debugging, latency, APIs, GPUs, logs, prompts, or deployments; do not imply that technology is literally present.
+- humorous-non-tech: one clear everyday-life comparison understandable without technical knowledge; avoid all computing jargon.`;
 
 const judgePrompt = `You are Claption's LLM judge.
 Score one caption against the fact sheet and requested style.
@@ -91,12 +102,16 @@ export async function POST(request: NextRequest) {
     await writeFile(videoPath, Buffer.from(await file.arrayBuffer()));
 
     const probed = await probeVideo(videoPath, tools.ffprobe);
-    const maxFrames = clampNumber(Number(process.env.CLAPTION_MAX_FRAMES ?? 8), 1, 30);
+    const maxFrames = clampNumber(Number(process.env.CLAPTION_MAX_FRAMES ?? 12), 1, 30);
     const timestamps = chooseTimestamps(probed.duration, maxFrames);
     const framePayloads = await sampleFrames(videoPath, workDir, timestamps, tools.ffmpeg);
 
-    const facts = await groundVideo(framePayloads, safeName);
-    const captions = await generateCaptions(facts);
+    const facts = await groundVideo(framePayloads, timestamps.slice(0, framePayloads.length), safeName);
+    let captions = await generateCaptions(facts);
+    const qualityIssues = captionQualityIssues(captions);
+    if (Object.keys(qualityIssues).length > 0) {
+      captions = await repairCaptionSet(facts, captions, qualityIssues);
+    }
     const judgeScores: Record<StyleKey, JudgeScore> = {} as Record<StyleKey, JudgeScore>;
     const repairThreshold = Number(process.env.CLAPTION_REPAIR_THRESHOLD ?? 8.0);
 
@@ -169,9 +184,9 @@ async function sampleFrames(videoPath: string, workDir: string, timestamps: numb
       "-frames:v",
       "1",
       "-vf",
-      "scale=min(768\\,iw):-2",
+      "scale=min(640\\,iw):-2",
       "-q:v",
-      "5",
+      "6",
       framePath
     ]);
     const frameBytes = await readFile(framePath);
@@ -185,20 +200,20 @@ async function sampleFrames(videoPath: string, workDir: string, timestamps: numb
   return images;
 }
 
-async function groundVideo(framesBase64: string[], videoName: string): Promise<Facts> {
+async function groundVideo(framesBase64: string[], timestamps: number[], videoName: string): Promise<Facts> {
   const content: Array<Record<string, unknown>> = [
     {
       type: "text",
-      text: `${groundingPrompt}\nVideo file: ${videoName}\nFrame order matches video timeline.`
-    },
-    ...framesBase64.map((image) => ({
-      type: "image_url",
-      image_url: { url: `data:image/jpeg;base64,${image}` }
-    }))
+      text: `${groundingPrompt}\nVideo file: ${videoName}\nThe following frames are ordered by timestamp.`
+    }
   ];
+  framesBase64.forEach((image, index) => {
+    content.push({ type: "text", text: `Frame ${index + 1} at ${timestamps[index].toFixed(2)} seconds:` });
+    content.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${image}` } });
+  });
   const data = await fireworksJson(env("FIREWORKS_VISION_MODEL", "accounts/fireworks/models/qwen3p7-plus"), [
     { role: "user", content }
-  ]);
+  ], 0.05, { maxTokens: 1200, reasoningEffort: "none" });
   return {
     summary: stringField(data.summary),
     visible_entities: stringList(data.visible_entities),
@@ -217,13 +232,45 @@ async function generateCaptions(facts: Facts): Promise<Record<StyleKey, Caption>
       { role: "system", content: captionPrompt },
       { role: "user", content: factSheet(facts) }
     ],
-    0.45
+    0.25,
+    { maxTokens: 1400, reasoningEffort: "none" }
   );
   const captions = {} as Record<StyleKey, Caption>;
   for (const style of styles) {
     captions[style] = normalizeCaption(data[style]);
   }
   return captions;
+}
+
+async function repairCaptionSet(
+  facts: Facts,
+  captions: Record<StyleKey, Caption>,
+  issues: Partial<Record<StyleKey, string[]>>
+): Promise<Record<StyleKey, Caption>> {
+  const flaggedStyles = styles.filter((style) => issues[style]?.length);
+  const data = await fireworksJson(
+    env("FIREWORKS_TEXT_MODEL", "accounts/fireworks/models/qwen3p7-plus"),
+    [
+      { role: "system", content: captionPrompt },
+      {
+        role: "user",
+        content: [
+          "Correct only the flagged captions and return strict JSON keyed only by the flagged styles.",
+          `Fact sheet:\n${factSheet(facts)}`,
+          `Current captions:\n${JSON.stringify(captions)}`,
+          `Flagged issues:\n${JSON.stringify(issues)}`
+        ].join("\n\n")
+      }
+    ],
+    0.15,
+    { maxTokens: 900, reasoningEffort: "none" }
+  );
+  const repaired = { ...captions };
+  for (const style of flaggedStyles) {
+    const candidate = normalizeCaption(data[style]);
+    if (candidate.text) repaired[style] = candidate;
+  }
+  return repaired;
 }
 
 async function judgeCaption(facts: Facts, style: StyleKey, caption: Caption, repairCount: number): Promise<JudgeScore> {
@@ -263,7 +310,12 @@ async function repairCaption(facts: Facts, style: StyleKey, caption: Caption, cr
   return normalizeCaption(data);
 }
 
-async function fireworksJson(model: string, messages: Array<Record<string, unknown>>, temperature = 0.2) {
+async function fireworksJson(
+  model: string,
+  messages: Array<Record<string, unknown>>,
+  temperature = 0.2,
+  options: { maxTokens?: number; reasoningEffort?: "none" | "low" | "medium" | "high" } = {}
+) {
   const response = await fetch(`${env("FIREWORKS_BASE_URL", "https://api.fireworks.ai/inference/v1")}/chat/completions`, {
     method: "POST",
     headers: {
@@ -274,6 +326,8 @@ async function fireworksJson(model: string, messages: Array<Record<string, unkno
       model,
       messages,
       temperature,
+      max_tokens: options.maxTokens ?? 1200,
+      ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
       response_format: { type: "json_object" }
     })
   });
@@ -305,11 +359,13 @@ async function stageExecutable(source: string, workDir: string, name: string) {
 }
 
 function chooseTimestamps(duration: number, maxFrames: number) {
-  const count = Math.max(4, Math.min(maxFrames, Math.ceil(duration / 5)));
+  const count = Math.max(Math.min(8, maxFrames), Math.min(maxFrames, Math.ceil(duration / 5)));
   const safeDuration = Math.max(0.2, duration);
+  const start = Math.min(0.35, safeDuration / 4);
+  const end = Math.max(start, safeDuration - 0.35);
   return Array.from({ length: count }, (_, index) => {
-    const midpoint = (safeDuration * (index + 0.5)) / count;
-    return Number(Math.min(Math.max(0.1, midpoint), Math.max(0.1, safeDuration - 0.25)).toFixed(2));
+    const position = count === 1 ? start : start + ((end - start) * index) / (count - 1);
+    return Number(position.toFixed(2));
   });
 }
 
@@ -356,11 +412,47 @@ function factSheet(facts: Facts) {
 
 function styleInstruction(style: StyleKey) {
   return {
-    formal: "Write a concise objective caption with no jokes.",
-    sarcastic: "Write dry, light sarcasm while preserving every factual constraint.",
-    "humorous-tech": "Use technical humor around debugging, APIs, GPUs, logs, prompts, latency, or deploys.",
-    "humorous-non-tech": "Use everyday humor that a non-technical judge can understand."
+    formal: "One objective sentence with no jokes, irony, exaggeration, or opinion.",
+    sarcastic: "One unmistakably dry, ironic sentence that keeps the visual facts literal and adds no mishap.",
+    "humorous-tech": "One grounded sentence with a clear software or AI analogy, without claiming technology is visible.",
+    "humorous-non-tech": "One grounded sentence with an everyday-life comparison and no computing jargon."
   }[style];
+}
+
+function captionQualityIssues(captions: Record<StyleKey, Caption>) {
+  const issues: Partial<Record<StyleKey, string[]>> = {};
+  const normalized = new Map<string, StyleKey>();
+  const techTerms = /\b(apis?|bugs?|cache|code|cpu|debug(?:s|ged|ging)?|deploy(?:s|ed|ing|ment)?|gpus?|latency|logs?|prompts?|servers?|stack|tokens?)\b/i;
+  const sarcasmCues = /\b(apparently|as if|because clearly|clearly|naturally|of course|surely|what could be|masterclass|bold choice)\b/i;
+  const genericTerms = /\b(main action|activity|demonstration|does something|doing something|some object|something happens)\b/i;
+
+  for (const style of styles) {
+    const caption = captions[style];
+    const styleIssues: string[] = [];
+    const words = caption.text.trim().split(/\s+/).filter(Boolean);
+    if (!caption.text.trim()) styleIssues.push("caption is empty");
+    if (words.length < 8 || words.length > 28) styleIssues.push("caption must contain 8-28 words");
+    if (caption.risk_flags.length > 0) styleIssues.push("caption contains a possible unsupported claim");
+    if (genericTerms.test(caption.text)) styleIssues.push("caption uses generic language instead of the concrete visible action");
+    if (style === "formal" && /[!?]|\b(apparently|hilarious|masterclass|of course)\b/i.test(caption.text)) {
+      styleIssues.push("formal tone contains humor, irony, or emphasis");
+    }
+    if (style === "sarcastic" && !sarcasmCues.test(caption.text)) {
+      styleIssues.push("sarcastic tone is not explicit enough for an LLM judge");
+    }
+    if (style === "humorous-tech" && !techTerms.test(caption.text)) {
+      styleIssues.push("humorous-tech caption lacks a recognizable technical analogy");
+    }
+    if (style === "humorous-non-tech" && techTerms.test(caption.text)) {
+      styleIssues.push("humorous-non-tech caption contains computing jargon");
+    }
+    const fingerprint = caption.text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const duplicateOf = normalized.get(fingerprint);
+    if (fingerprint && duplicateOf) styleIssues.push(`caption duplicates ${duplicateOf}`);
+    if (fingerprint) normalized.set(fingerprint, style);
+    if (styleIssues.length) issues[style] = styleIssues;
+  }
+  return issues;
 }
 
 function stringField(value: unknown) {

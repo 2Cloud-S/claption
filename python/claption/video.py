@@ -54,9 +54,9 @@ def sample_frames(path: Path, output_dir: Path, max_frames: int) -> SampledFrame
             "-frames:v",
             "1",
             "-vf",
-            "scale='min(960,iw)':-2",
+            "scale='min(640,iw)':-2",
             "-q:v",
-            "4",
+            "6",
             str(frame_path),
         ]
         subprocess.run(command, check=True, capture_output=True, text=True)
@@ -67,10 +67,12 @@ def sample_frames(path: Path, output_dir: Path, max_frames: int) -> SampledFrame
 def choose_timestamps(duration: float, max_frames: int) -> list[float]:
     if duration <= 0:
         return [0.0]
-    count = max(4, min(max_frames, math.ceil(duration / 5)))
+    count = max(min(8, max_frames), min(max_frames, math.ceil(duration / 5)))
     safe_duration = max(0.2, duration)
+    start = min(0.35, safe_duration / 4)
+    end = max(start, safe_duration - 0.35)
     return [
-        round(min(max(0.1, (safe_duration * (index + 0.5)) / count), max(0.1, safe_duration - 0.25)), 2)
+        round(start if count == 1 else start + ((end - start) * index) / (count - 1), 2)
         for index in range(count)
     ]
 

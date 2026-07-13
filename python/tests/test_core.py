@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from claption.agents import caption_quality_issues
 from claption.cli import evaluate_results
 from claption.json_utils import extract_json_object
 from claption.judge import heuristic_score
@@ -17,6 +18,20 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(len(timestamps), 12)
         self.assertGreater(timestamps[0], 0)
         self.assertLess(timestamps[-1], 120)
+        self.assertLess(timestamps[0], 1)
+        self.assertGreater(timestamps[-1], 119)
+
+    def test_caption_quality_checks_style_and_length(self):
+        captions = {
+            "formal": Caption("A person carefully places an object on the table.", "Grounded action.", []),
+            "sarcastic": Caption("Apparently, placing the object required a truly historic level of ceremony.", "Dry comparison.", []),
+            "humorous-tech": Caption("The careful placement deploys successfully, with no rollback required.", "Deployment analogy.", []),
+            "humorous-non-tech": Caption("The object lands like the final snack claiming its favorite spot.", "Everyday comparison.", []),
+        }
+        self.assertEqual(caption_quality_issues(captions), {})
+
+        captions["humorous-tech"] = Caption("A person carefully places an object on the table.", "No analogy.", [])
+        self.assertIn("humorous-tech", caption_quality_issues(captions))
 
     def test_extract_json_object_from_fenced_text(self):
         self.assertEqual(extract_json_object('```json\n{"ok": true}\n```'), {"ok": True})
