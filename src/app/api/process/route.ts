@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -76,6 +76,7 @@ export async function POST(request: NextRequest) {
 
   const workDir = await mkdtemp(path.join(/*turbopackIgnore: true*/ tmpdir(), "claption-"));
   try {
+    const tools = await prepareMediaTools(workDir);
     const form = await request.formData();
     const file = form.get("video");
     if (!(file instanceof File)) {
@@ -89,10 +90,10 @@ export async function POST(request: NextRequest) {
     const videoPath = path.join(/*turbopackIgnore: true*/ workDir, safeName);
     await writeFile(videoPath, Buffer.from(await file.arrayBuffer()));
 
-    const probed = await probeVideo(videoPath);
+    const probed = await probeVideo(videoPath, tools.ffprobe);
     const maxFrames = clampNumber(Number(process.env.CLAPTION_MAX_FRAMES ?? 24), 1, 30);
     const timestamps = chooseTimestamps(probed.duration, maxFrames);
-    const framePayloads = await sampleFrames(videoPath, workDir, timestamps);
+    const framePayloads = await sampleFrames(videoPath, workDir, timestamps, tools.ffmpeg);
 
     const facts = await groundVideo(framePayloads, safeName);
     const captions = await generateCaptions(facts);
@@ -127,8 +128,8 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function probeVideo(videoPath: string) {
-  const { stdout } = await execFileAsync(ffprobePath, [
+async function probeVideo(videoPath: string, ffprobeExecutable: string) {
+  const { stdout } = await execFileAsync(ffprobeExecutable, [
     "-v",
     "error",
     "-select_streams",
@@ -148,12 +149,12 @@ async function probeVideo(videoPath: string) {
   return { duration, fps };
 }
 
-async function sampleFrames(videoPath: string, workDir: string, timestamps: number[]) {
+async function sampleFrames(videoPath: string, workDir: string, timestamps: number[], ffmpegExecutable: string) {
   const images: string[] = [];
   let totalBytes = 0;
   for (let index = 0; index < timestamps.length; index += 1) {
     const framePath = path.join(/*turbopackIgnore: true*/ workDir, `frame-${String(index).padStart(3, "0")}.jpg`);
-    await execFileAsync(ffmpegPath, [
+    await execFileAsync(ffmpegExecutable, [
       "-y",
       "-ss",
       timestamps[index].toFixed(3),
@@ -277,6 +278,24 @@ async function fireworksJson(model: string, messages: Array<Record<string, unkno
   const text = payload.choices?.[0]?.message?.content;
   if (!text) throw new Error("Fireworks returned an empty response.");
   return extractJson(text);
+}
+
+async function prepareMediaTools(workDir: string) {
+  return {
+    ffmpeg: await stageExecutable(ffmpegPath, workDir, "ffmpeg"),
+    ffprobe: await stageExecutable(ffprobePath, workDir, "ffprobe")
+  };
+}
+
+async function stageExecutable(source: string, workDir: string, name: string) {
+  if (!path.isAbsolute(source)) return source;
+  const extension = path.extname(source);
+  const stagedPath = path.join(/*turbopackIgnore: true*/ workDir, `${name}${extension}`);
+  await copyFile(source, stagedPath);
+  if (process.platform !== "win32") {
+    await chmod(stagedPath, 0o755);
+  }
+  return stagedPath;
 }
 
 function chooseTimestamps(duration: number, maxFrames: number) {
