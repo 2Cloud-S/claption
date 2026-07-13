@@ -170,6 +170,12 @@ export function ClaptionWorkbench() {
         <div className="status-pill">Overall {averageScore} / 10 · {status}</div>
       </header>
 
+      <section className="judge-notice" aria-label="Judge evaluation notice">
+        <strong>Judge note:</strong> this Vercel URL is a public UI preview. For automated Track 2 scoring and full
+        video processing with system FFmpeg, use the container image{" "}
+        <code>ghcr.io/2cloud-s/claption:latest</code>. The Docker path is the intended evaluation runtime.
+      </section>
+
       <section className="workspace" aria-label="Claption workbench">
         <div className="panel">
           <div className="panel-header">
@@ -182,8 +188,8 @@ export function ClaptionWorkbench() {
                 <video src={videoUrl} controls onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)} />
               ) : (
                 <p className="empty-video">
-                  Load one of the hackathon clips, then run the four-style caption pass. The server extracts frames with
-                  FFmpeg, calls Fireworks, scores each style, and repairs weak captions.
+                  Load one of the hackathon clips to preview the four-style caption pass. Judges should use the Docker
+                  image for the official run because it includes the full FFmpeg runtime.
                 </p>
               )}
             </div>

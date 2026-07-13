@@ -80,6 +80,23 @@ a {
   white-space: nowrap;
 }
 
+.judge-notice {
+  margin-top: var(--space-md);
+  border: var(--rule-thin) solid var(--color-ink);
+  border-left: var(--rule-thick) solid var(--color-accent-2);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-paper-2);
+  color: var(--color-ink);
+  line-height: 1.45;
+}
+
+.judge-notice code {
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.12fr);
